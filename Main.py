@@ -1,9 +1,8 @@
 import os
 import time
 import logging
-import asyncio
 from pyrogram import Client, filters
-from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
+from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from yt_dlp import YoutubeDL
 from flask import Flask
 from threading import Thread
@@ -12,7 +11,7 @@ from threading import Thread
 app_flask = Flask(__name__)
 @app_flask.route('/')
 def home():
-    return "Bot 7/24 Aktif!"
+    return "Bot Aktif!"
 
 def run_web_server():
     port = int(os.environ.get('PORT', 5000))
@@ -29,120 +28,60 @@ bot_token = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 bot = Client("my_bot", api_id=api_id, api_hash=api_hash, bot_token=bot_token)
 url_store = {}
 
-# --- DESTEKLENEN PLATFORMLAR ---
-def is_supported(url):
-    platforms = ["youtube.com", "youtu.be", "instagram.com", "tiktok.com", "pinterest.com", "pin.it"]
-    return any(p in url for p in platforms)
-
 @bot.on_message(filters.command("start"))
 async def start(client, message):
-    await message.reply_text(
-        "🚀 **Çok Amaçlı İndirici Bot Hazır!**\n\n"
-        "Aşağıdaki platformlardan link gönderebilirsin:\n"
-        "• YouTube & Shorts\n"
-        "• Instagram Reels\n"
-        "• TikTok (Logosuz)\n"
-        "• Pinterest Video\n\n"
-        "⚡ _Sadece linki yapıştır ve bekle!_"
-    )
+    await message.reply_text("👋 Merhaba! YouTube, Instagram, TikTok veya Pinterest linki gönder, senin için indireyim.")
 
 @bot.on_message(filters.text & ~filters.command("start"))
 async def handle_message(client, message):
     url = message.text.strip()
-    
-    if is_supported(url):
+    if any(p in url for p in ["youtube.com", "youtu.be", "instagram.com", "tiktok.com", "pinterest.com", "pin.it"]):
         uid = str(time.time()).replace(".", "")[-8:]
         url_store[uid] = url
-        
         keyboard = InlineKeyboardMarkup([
             [InlineKeyboardButton("🎵 MP3 (Ses)", callback_data=f"mp3|{uid}")],
             [InlineKeyboardButton("📺 MP4 (Video)", callback_data=f"mp4|{uid}")]
         ])
-        await message.reply_text("📥 Hangi formatta indirmek istersiniz?", reply_markup=keyboard)
+        await message.reply_text("📥 Format seçin:", reply_markup=keyboard)
     else:
-        await message.reply_text("❌ Desteklenmeyen bir link gönderdiniz. Lütfen geçerli bir URL deneyin.")
+        await message.reply_text("❌ Desteklenmeyen link!")
 
 @bot.on_callback_query()
 async def callback_handler(client, query):
     data = query.data.split("|")
-    format_choice = data[0]
-    uid = data[1]
+    fmt, uid = data[0], data[1]
     url = url_store.get(uid)
+    if not url: return
 
-    if not url:
-        await query.message.edit_text("❌ Oturum süresi doldu. Lütfen linki tekrar gönderin.")
-        return
+    status = await query.message.edit_text("⏳ Hazırlanıyor...")
+    out_name = f"file_{uid}"
+    ydl_opts = {'restrictfilenames': True, 'noplaylist': True, 'quiet': True}
 
-    status_msg = await query.message.edit_text(f"⏳ {format_choice.upper()} hazırlanıyor... Lütfen bekleyin.")
-
-    output_filename = f"file_{uid}"
-    
-    # Platforma göre özel ayarlar
-    ydl_opts = {
-        'restrictfilenames': True,
-        'noplaylist': True,
-        'quiet': True,
-        'no_warnings': True,
-    }
-
-    if format_choice == "mp3":
-        ydl_opts.update({
-            'format': 'bestaudio/best',
-            'outtmpl': f'{output_filename}.%(ext)s',
-            'postprocessors': [{
-                'key': 'FFmpegExtractAudio',
-                'preferredcodec': 'mp3',
-                'preferredquality': '192',
-            }],
-        })
+    if fmt == "mp3":
+        ydl_opts.update({'format': 'bestaudio/best', 'outtmpl': f'{out_name}.%(ext)s',
+                        'postprocessors': [{'key': 'FFmpegExtractAudio', 'preferredcodec': 'mp3', 'preferredquality': '192'}]})
     else:
-        # TikTok ve Pinterest için en iyi videoyu seç
-        ydl_opts.update({
-            'format': 'bestvideo+bestaudio/best',
-            'outtmpl': f'{output_filename}.%(ext)s',
-            'merge_output_format': 'mp4',
-        })
+        ydl_opts.update({'format': 'best', 'outtmpl': f'{out_name}.%(ext)s'})
 
     try:
         with YoutubeDL(ydl_opts) as ydl:
-            # TikTok/Pinterest gibi platformlarda hata payını düşürmek için extract_info
-            info = ydl.extract_info(url, download=True)
-            
-            # İndirilen dosyayı kontrol et (farklı uzantılar için)
-            downloaded_file = None
+            ydl.extract_info(url, download=True)
+            target_file = None
             for f in os.listdir():
-                if f.startswith(output_filename):
-                    downloaded_file = f
+                if f.startswith(out_name):
+                    target_file = f
                     break
             
-            if not downloaded_file:
-                raise Exception("Dosya indirilemedi.")
-
-            if format_choice == "mp3":
-                await client.send_audio(
-                    chat_id=query.message.chat.id, 
-                    audio=downloaded_file, 
-                    caption="✅ Ses dosyası hazır!"
-                )
-            else:
-                await client.send_video(
-                    chat_id=query.message.chat.id, 
-                    video=downloaded_file, 
-                    caption="✅ Video hazır!"
-                )
-
-            # Temizlik
-            os.remove(downloaded_file)
-            await status_msg.delete()
-
+            if target_file:
+                if fmt == "mp3":
+                    await client.send_audio(query.message.chat.id, audio=target_file)
+                else:
+                    await client.send_video(query.message.chat.id, video=target_file)
+                os.remove(target_file)
+                await status.delete()
     except Exception as e:
-        logger.error(f"HATA: {str(e)}")
-        await status_msg.edit_text(f"❌ Bir hata oluştu.\nDetay: `{str(e)[:100]}`")
+        await status.edit_text(f"❌ Hata: {str(e)[:50]}")
 
 if __name__ == "__main__":
-    # Flask sunucusunu başlat (Render için)
     Thread(target=run_web_server).start()
-    
-    # Botu başlat
-    logger.info("Bot Aktif ve Link Bekliyor...")
     bot.run()
