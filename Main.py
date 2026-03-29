@@ -6,6 +6,26 @@
 #        GEREKLİ KÜTÜPHANELER        #
 ######################################
 import os
+import asyncio
+import yt_dlp
+from pyrogram import Client, filters
+from pyrogram.types import Message
+from flask import Flask  # Yeni kütüphane
+from threading import Thread # Arka planda çalışması için
+
+# --- WEB SERVER (CANLI TUTMA) ---
+app = Flask(__name__)
+
+@app.route('/')
+def home():
+    return "Bot Çalışıyor!"
+
+def run_web_server():
+    app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
+
+# --------------------------------
+
+import os
 import sys
 import locale
 import logging
