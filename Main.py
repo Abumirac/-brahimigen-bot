@@ -651,7 +651,9 @@ def signal_handler(sig, frame):
             print(f"❌ Durdurma sırasında hata: {e}")
     sys.exit(0)
 
-if __name__ == "__main__":
+if __name__ == "__main__    # Web server'ı arka planda başlat
+    Thread(target=run_web_server).start()
+":
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
 
